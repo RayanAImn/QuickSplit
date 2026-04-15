@@ -1,0 +1,185 @@
+***
+
+# 🚀 QuickSplit: Master Technical Specification (StreamPay Integrated)
+
+## **I. Executive Project Overview**
+**QuickSplit** is a high-trust fintech utility that eliminates group payment friction.
+* **The Problem:** Payers waste time manually chasing shares via WhatsApp.
+* **The Differentiator:** Only the Payer needs an account. Receivers use a "Zero-Friction" browser portal.
+* **The Payment Engine:** All transactions must be handled via the **StreamPay API** (`https://docs.streampay.sa/`) using the **Sandbox environment**.
+
+---
+
+## **II. Visual Identity & Brand System**
+*Configure Tailwind CSS and Global CSS to strictly adhere to these tokens:*
+
+### **1. Typography**
+* **Primary (Headings/Buttons/Logo):** `Gill Sans MT`, `Gill Sans`, `sans-serif`.
+* **Secondary (Body/Inputs):** `Calibri`, `Candara`, `Segoe UI`, `sans-serif`.
+
+### **2. Color Palette**
+| Category | Token | Hex | Usage |
+| :--- | :--- | :--- | :--- |
+| **Primary** | `forest` | `#1F6F5F` | Main brand, hero bgs, primary buttons. |
+| **Action** | `teal` | `#2FA084` | Links, progress bars, secondary buttons. |
+| **Success** | `mint` | `#6FCF97` | Success states, badges, checkmarks. |
+| **Surface** | `smoke` | `#EEEEEE` | Application background. |
+| **Surface** | `pale` | `#E8F5EE` | Card backgrounds, calculation areas. |
+| **Text** | `ink` | `#1A1A1A` | Primary body and heading text. |
+
+---
+
+## **III. Technical Architecture: Thick Database & API Integration**
+*Logic resides in PostgreSQL triggers and Server Actions for security and consistency.*
+
+### **1. The Payment Gateway (StreamPay)**
+* **Documentation:** `https://docs.streampay.sa/`
+* **Mode:** **Sandbox only.**
+* **Implementation:** * Use StreamPay for Mada and STC Pay processing.
+    * Store the `streampay_transaction_id` in the `transactions` table.
+    * Implement a Webhook listener to update `split_items` status to `paid` once StreamPay confirms the settlement.
+
+### **2. Relational ER Model (Supabase)**
+Define in `/supabase/migrations` using this schema table:
+
+| Table | Columns |
+| :--- | :--- |
+| **`profiles`** | `id`, `full_name`, `phone_number`, `bank_details` (JSONB) |
+| **`bills`** | `id`, `payer_id` (FK), `description`, `total_amount`, `num_people`, `status` (active, pending, settled) |
+| **`split_items`** | `id`, `bill_id`, `amount_per_person`, `status` (unpaid, paid), `receiver_name` (TEXT, NOT NULL) |
+| **`transactions`** | `id`, `split_item_id`, `streampay_ref`, `status` (pending, completed, failed), `paid_at` |
+
+### **3. API Specification (Required Endpoints)**
+Base path: `/api`
+
+| Method | Path | Purpose | Rules |
+| :--- | :--- | :--- | :--- |
+| `GET` | `/healthz` | Health check | Returns `{ status: "ok" }`. |
+| `GET` | `/bills?payerPhone=...` | List payer bills | Payer-owned records only. |
+| `POST` | `/bills` | Create bill + split items | Create bill and unpaid split rows. |
+| `GET` | `/bills/:billId` | Bill detail for shared page | Public read via secure UUID link. |
+| `GET` | `/bills/:billId/summary` | Progress summary | Used by pay page progress UI. |
+| `POST` | `/bills/:billId/pay` | Initiate StreamPay checkout | Request must include `splitItemId`, `receiverName`, `returnUrl`. Save `receiver_name` before redirecting to StreamPay. |
+| `POST` | `/webhooks/streampay` | StreamPay payment callback | Verify signature/authenticity, then mark split item `paid` and transaction `completed`. |
+| `GET` | `/payer/bills/stats?payerPhone=...` | Payer dashboard metrics | Aggregated totals and states. |
+
+**Critical security rule:** Never mark a payment as paid from client-side callbacks or a "confirm payment" button. Only webhook-verified StreamPay events can update `split_items.status = 'paid'`.
+
+### **4. Database Logic**
+* **Auto-Settlement Trigger:** PostgreSQL function `check_bill_status()`. Whenever a `split_item` becomes `paid`, if `SUM(paid_items) == total_amount - payer_share`, set `bills.status = 'settled'`.
+* **RLS:** Payers own their data. Public users have `SELECT` access to specific `bills` via the UUID in the URL.
+
+---
+
+## **IV. Implementation Scenarios & Logic Flows**
+
+### **Flow 1: Payer Initiation**
+1.  Payer enters total and count. App calculates shares.
+2.  **UI:** Generate a unique link: `quicksplit.sa/pay/[bill_id]` and a corresponding QR code.
+
+### **Flow 2: Zero-Friction Receiver Portal**
+1.  Receiver opens the link (No login).
+2.  **UI Display:** "Dinner at Nusret — SAR 80 due. [1/3] paid."
+3.  **Required Input:** Receiver must enter `Your Name` before paying. Store this in `split_items.receiver_name` and include it in payment metadata.
+4.  **Payment:** Receiver clicks "Pay Share." App initializes a StreamPay Sandbox transaction.
+5.  **Real-Time:** Upon success, the **Teal Progress Bar** updates for all viewers instantly.
+
+### **Flow 3: Security & Locking (Scenario 3)**
+1.  Once the bill is `settled`, the payment link must block all new transaction attempts.
+2.  Late-comers see: "Bill Fully Settled. [Payer Name] collected [Total Amount]."
+
+---
+
+## **V. Real-Time Infrastructure (Stream API)**
+1.  **Event:** StreamPay Webhook confirms payment → `transactions` table updates/creates row and `split_items.status` becomes `paid`.
+2.  **Action:** Supabase Webhook calls a Next.js Edge Function.
+3.  **Feed:** Use **Stream Activity Feed API** to push a notification to the Payer: *"New payment of SAR 80 received for Dinner."*
+
+---
+
+## **VI. Development Standards**
+* **Framework:** Next.js 15 (App Router), TypeScript, Tailwind CSS.
+* **Principles:** **SOLID** and **DRY**. 
+* **API Security:** Store StreamPay API keys in `.env` and never expose them to the client-side.
+* **UI:** Mobile-first design for 90% mobile browser usage.
+
+***
+
+**[Final Instruction to Agent]:** Start by generating the SQL migrations for the Supabase tables and triggers. Then, create the `lib/streampay.ts` service to handle the sandbox API interactions based on the provided documentation.
+
+***
+Build a PostgreSQL database for a payment-splitting app, and assume we are using Supabase as the database platform (auth, Postgres, RLS, SQL migrations).
+
+Create Supabase migration SQL files in this order:
+001_initial_schema.sql
+002_auto_settle_trigger.sql
+003_rls_policies.sql
+
+1) Extensions
+- Enable extension: uuid-ossp
+
+2) Tables
+
+- profiles
+  - id UUID PK default uuid_generate_v4()
+  - full_name TEXT NOT NULL
+  - phone_number TEXT NOT NULL UNIQUE
+  - bank_details JSONB NULL
+  - created_at TIMESTAMPTZ NOT NULL default now()
+  - updated_at TIMESTAMPTZ NOT NULL default now()
+
+- bills
+  - id UUID PK default uuid_generate_v4()
+  - payer_name TEXT NOT NULL
+  - payer_phone TEXT NOT NULL
+  - description TEXT NOT NULL
+  - total_amount NUMERIC(10,2) NOT NULL
+  - num_people INTEGER NOT NULL
+  - amount_per_person NUMERIC(10,2) NOT NULL
+  - status TEXT NOT NULL default 'active' CHECK IN ('active','pending','settled')
+  - created_at TIMESTAMPTZ NOT NULL default now()
+  - updated_at TIMESTAMPTZ NOT NULL default now()
+  - indexes: (payer_phone), (status)
+
+- split_items
+  - id UUID PK default uuid_generate_v4()
+  - bill_id UUID NOT NULL FK -> bills(id) ON DELETE CASCADE
+  - amount NUMERIC(10,2) NOT NULL
+  - status TEXT NOT NULL default 'unpaid' CHECK IN ('unpaid','paid')
+  - paid_at TIMESTAMPTZ NULL
+  - streampay_ref TEXT NULL
+  - created_at TIMESTAMPTZ NOT NULL default now()
+  - updated_at TIMESTAMPTZ NOT NULL default now()
+  - indexes: (bill_id), (status)
+
+- transactions
+  - id UUID PK default uuid_generate_v4()
+  - split_item_id UUID NOT NULL FK -> split_items(id) ON DELETE CASCADE
+  - streampay_ref TEXT NOT NULL
+  - amount NUMERIC(10,2) NOT NULL
+  - status TEXT NOT NULL default 'pending'
+  - paid_at TIMESTAMPTZ NULL
+  - created_at TIMESTAMPTZ NOT NULL default now()
+  - updated_at TIMESTAMPTZ NOT NULL default now()
+  - indexes: (split_item_id), (streampay_ref)
+
+3) Trigger Logic
+- Create function check_bill_status() on split_items AFTER UPDATE.
+- If split_items.status changes from 'unpaid' -> 'paid':
+  - count total split_items for that bill
+  - count paid split_items for that bill
+  - if all paid: set bills.status='settled', update updated_at
+  - else if bill was active: set bills.status='pending', update updated_at
+
+4) Supabase RLS
+- Enable RLS on profiles, bills, split_items, transactions.
+- Policies in source project:
+  - bills: public SELECT, insert/update allowed (intended for service role API)
+  - split_items: public SELECT, insert/update allowed (intended for service role API)
+  - transactions: select/insert/update allowed (intended for service role API only)
+  - profiles: FOR ALL allowed (intended for service role API only)
+
+5) Relationship Model
+- One bill has many split_items.
+- One split_item has many transactions (or at least one payment attempt).
+- Bill lifecycle: active -> pending -> settled based on split_item payments.

@@ -1,0 +1,75 @@
+Build a PostgreSQL database for a payment-splitting app, and assume we are using Supabase as the database platform (auth, Postgres, RLS, SQL migrations).
+
+Create Supabase migration SQL files in this order:
+001_initial_schema.sql
+002_auto_settle_trigger.sql
+003_rls_policies.sql
+
+1) Extensions
+- Enable extension: uuid-ossp
+
+2) Tables
+
+- profiles
+  - id UUID PK default uuid_generate_v4()
+  - full_name TEXT NOT NULL
+  - phone_number TEXT NOT NULL UNIQUE
+  - bank_details JSONB NULL
+  - created_at TIMESTAMPTZ NOT NULL default now()
+  - updated_at TIMESTAMPTZ NOT NULL default now()
+
+- bills
+  - id UUID PK default uuid_generate_v4()
+  - payer_name TEXT NOT NULL
+  - payer_phone TEXT NOT NULL
+  - description TEXT NOT NULL
+  - total_amount NUMERIC(10,2) NOT NULL
+  - num_people INTEGER NOT NULL
+  - amount_per_person NUMERIC(10,2) NOT NULL
+  - status TEXT NOT NULL default 'active' CHECK IN ('active','pending','settled')
+  - created_at TIMESTAMPTZ NOT NULL default now()
+  - updated_at TIMESTAMPTZ NOT NULL default now()
+  - indexes: (payer_phone), (status)
+
+- split_items
+  - id UUID PK default uuid_generate_v4()
+  - bill_id UUID NOT NULL FK -> bills(id) ON DELETE CASCADE
+  - amount NUMERIC(10,2) NOT NULL
+  - status TEXT NOT NULL default 'unpaid' CHECK IN ('unpaid','paid')
+  - paid_at TIMESTAMPTZ NULL
+  - streampay_ref TEXT NULL
+  - created_at TIMESTAMPTZ NOT NULL default now()
+  - updated_at TIMESTAMPTZ NOT NULL default now()
+  - indexes: (bill_id), (status)
+
+- transactions
+  - id UUID PK default uuid_generate_v4()
+  - split_item_id UUID NOT NULL FK -> split_items(id) ON DELETE CASCADE
+  - streampay_ref TEXT NOT NULL
+  - amount NUMERIC(10,2) NOT NULL
+  - status TEXT NOT NULL default 'pending'
+  - paid_at TIMESTAMPTZ NULL
+  - created_at TIMESTAMPTZ NOT NULL default now()
+  - updated_at TIMESTAMPTZ NOT NULL default now()
+  - indexes: (split_item_id), (streampay_ref)
+
+3) Trigger Logic
+- Create function check_bill_status() on split_items AFTER UPDATE.
+- If split_items.status changes from 'unpaid' -> 'paid':
+  - count total split_items for that bill
+  - count paid split_items for that bill
+  - if all paid: set bills.status='settled', update updated_at
+  - else if bill was active: set bills.status='pending', update updated_at
+
+4) Supabase RLS
+- Enable RLS on profiles, bills, split_items, transactions.
+- Policies in source project:
+  - bills: public SELECT, insert/update allowed (intended for service role API)
+  - split_items: public SELECT, insert/update allowed (intended for service role API)
+  - transactions: select/insert/update allowed (intended for service role API only)
+  - profiles: FOR ALL allowed (intended for service role API only)
+
+5) Relationship Model
+- One bill has many split_items.
+- One split_item has many transactions (or at least one payment attempt).
+- Bill lifecycle: active -> pending -> settled based on split_item payments.
