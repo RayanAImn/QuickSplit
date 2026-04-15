@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useLocation } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
 import { useCreateBill, getListBillsQueryKey } from "@workspace/api-client-react";
@@ -11,6 +11,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { QrScannerModal } from "@/components/qr-scanner-modal";
 import { ScannedBillCard } from "@/components/scanned-bill-card";
 import { ZatcaInvoice } from "@/lib/zatca-decoder";
+import { parseVCard, readFileAsText } from "@/lib/vcard-parser";
 import { ArrowLeft, Plus, Trash2, Users, Receipt, ScanLine, X, Contact } from "lucide-react";
 
 interface Member {
@@ -40,6 +41,10 @@ export default function CreateBill() {
   const [error, setError] = useState<string | null>(null);
   const [scannerOpen, setScannerOpen] = useState(false);
   const [scannedInvoice, setScannedInvoice] = useState<ZatcaInvoice | null>(null);
+
+  const vcfMultiRef = useRef<HTMLInputElement>(null);
+  const vcfSingleRef = useRef<HTMLInputElement>(null);
+  const pendingSingleIndex = useRef<number>(0);
 
   const createBillMutation = useCreateBill({
     mutation: {
@@ -82,42 +87,72 @@ export default function CreateBill() {
     }
   };
 
+  const hasNativeContacts = typeof navigator !== "undefined" && !!navigator.contacts;
+
   const handleAddFromContacts = async (index: number) => {
-    if (!navigator.contacts) {
-      alert("Contacts access is not supported on this browser. Use Chrome on Android or Safari on iOS.");
-      return;
+    if (hasNativeContacts) {
+      try {
+        const results = await navigator.contacts!.select(["name", "tel"], { multiple: false });
+        if (!results.length) return;
+        const contact = results[0];
+        const contactName = contact.name?.[0] ?? "";
+        const rawPhone = contact.tel?.[0]?.replace(/[\s\-().]/g, "") ?? "";
+        updateMember(index, "name", contactName);
+        updateMember(index, "phone", rawPhone);
+        return;
+      } catch {
+        // dismissed or unsupported — fall through to vCard
+      }
     }
-    try {
-      const results = await navigator.contacts.select(["name", "tel"], { multiple: false });
-      if (!results.length) return;
-      const contact = results[0];
-      const contactName = contact.name?.[0] ?? "";
-      const rawPhone = contact.tel?.[0]?.replace(/\s+/g, "") ?? "";
-      const contactPhone = rawPhone.startsWith("+") ? rawPhone : rawPhone;
-      updateMember(index, "name", contactName);
-      updateMember(index, "phone", contactPhone);
-    } catch {
-      // user dismissed
-    }
+    pendingSingleIndex.current = index;
+    vcfSingleRef.current?.click();
   };
 
   const handleAddMultipleFromContacts = async () => {
-    if (!navigator.contacts) {
-      alert("Contacts access is not supported on this browser. Use Chrome on Android or Safari on iOS.");
-      return;
+    if (hasNativeContacts) {
+      try {
+        const results = await navigator.contacts!.select(["name", "tel"], { multiple: true });
+        if (!results.length) return;
+        const newMembers: Member[] = results.map((c) => ({
+          name: c.name?.[0] ?? "",
+          phone: c.tel?.[0]?.replace(/[\s\-().]/g, "") ?? "",
+        }));
+        const hasEmpty = members.length === 1 && !members[0].name && !members[0].phone;
+        setMembers(hasEmpty ? newMembers : [...members, ...newMembers]);
+        return;
+      } catch {
+        // dismissed or unsupported — fall through to vCard
+      }
     }
-    try {
-      const results = await navigator.contacts.select(["name", "tel"], { multiple: true });
-      if (!results.length) return;
-      const newMembers: Member[] = results.map((c) => ({
-        name: c.name?.[0] ?? "",
-        phone: c.tel?.[0]?.replace(/\s+/g, "") ?? "",
-      }));
-      const hasEmpty = members.length === 1 && !members[0].name && !members[0].phone;
-      setMembers(hasEmpty ? newMembers : [...members, ...newMembers]);
-    } catch {
-      // user dismissed
+    vcfMultiRef.current?.click();
+  };
+
+  const handleVcfMulti = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files?.length) return;
+    const allContacts: Member[] = [];
+    for (let i = 0; i < files.length; i++) {
+      const text = await readFileAsText(files[i]);
+      const parsed = parseVCard(text);
+      allContacts.push(...parsed);
     }
+    if (allContacts.length === 0) return;
+    const hasEmpty = members.length === 1 && !members[0].name && !members[0].phone;
+    setMembers(hasEmpty ? allContacts : [...members, ...allContacts]);
+    if (vcfMultiRef.current) vcfMultiRef.current.value = "";
+  };
+
+  const handleVcfSingle = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const text = await readFileAsText(file);
+    const parsed = parseVCard(text);
+    if (parsed.length > 0) {
+      const idx = pendingSingleIndex.current;
+      updateMember(idx, "name", parsed[0].name);
+      updateMember(idx, "phone", parsed[0].phone);
+    }
+    if (vcfSingleRef.current) vcfSingleRef.current.value = "";
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -154,10 +189,24 @@ export default function CreateBill() {
     return null;
   }
 
-  const contactsSupported = typeof navigator !== "undefined" && "contacts" in navigator;
-
   return (
     <div className="min-h-[100dvh] pb-10">
+      <input
+        ref={vcfMultiRef}
+        type="file"
+        accept=".vcf,text/vcard,text/x-vcard"
+        multiple
+        className="hidden"
+        onChange={handleVcfMulti}
+      />
+      <input
+        ref={vcfSingleRef}
+        type="file"
+        accept=".vcf,text/vcard,text/x-vcard"
+        className="hidden"
+        onChange={handleVcfSingle}
+      />
+
       <header className="bg-primary text-primary-foreground p-6 rounded-b-3xl shadow-md">
         <div className="flex items-center gap-4 mb-2">
           <Button
@@ -278,18 +327,16 @@ export default function CreateBill() {
                     Each member gets a WhatsApp payment link automatically.
                   </CardDescription>
                 </div>
-                {contactsSupported && (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={handleAddMultipleFromContacts}
-                    className="shrink-0 gap-1.5 text-xs border-secondary/40 text-secondary hover:bg-secondary/10"
-                  >
-                    <Contact className="h-3.5 w-3.5" />
-                    Contacts
-                  </Button>
-                )}
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={handleAddMultipleFromContacts}
+                  className="shrink-0 gap-1.5 text-xs border-secondary/40 text-secondary hover:bg-secondary/10"
+                >
+                  <Contact className="h-3.5 w-3.5" />
+                  Contacts
+                </Button>
               </div>
             </CardHeader>
             <CardContent className="space-y-3">
@@ -310,18 +357,16 @@ export default function CreateBill() {
                           onChange={(e) => updateMember(index, "name", e.target.value)}
                           className="flex-1"
                         />
-                        {contactsSupported && (
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="icon"
-                            onClick={() => handleAddFromContacts(index)}
-                            className="shrink-0 text-secondary border-secondary/40 hover:bg-secondary/10"
-                            title="Pick from contacts"
-                          >
-                            <Contact className="h-4 w-4" />
-                          </Button>
-                        )}
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="icon"
+                          onClick={() => handleAddFromContacts(index)}
+                          className="shrink-0 text-secondary border-secondary/40 hover:bg-secondary/10"
+                          title="Pick from contacts"
+                        >
+                          <Contact className="h-4 w-4" />
+                        </Button>
                       </div>
                       <Input
                         placeholder="+966500000000"
