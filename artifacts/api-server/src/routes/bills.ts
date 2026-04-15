@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { eq, and, sql, desc } from "drizzle-orm";
+import { eq, sql, desc } from "drizzle-orm";
 import { db, billsTable, splitItemsTable } from "@workspace/db";
 import {
   ListBillsQueryParams,
@@ -13,6 +13,15 @@ import {
 import { createOrGetConsumer, createProduct, createPaymentLink } from "../lib/streampay";
 
 const router: IRouter = Router();
+
+function toApiSplitItem(item: typeof splitItemsTable.$inferSelect) {
+  return {
+    ...item,
+    paymentLinkUrl: item.streampayPaymentLinkUrl,
+    receiverPhone: null,
+    streampayConsumerId: null,
+  };
+}
 
 function getAppBaseUrl(req: Express.Request | import("express").Request): string {
   const proto = (req.headers["x-forwarded-proto"] as string) ?? req.protocol;
@@ -83,7 +92,6 @@ router.post("/bills", async (req, res): Promise<void> => {
           amount: String(amountPerPerson),
           status: "unpaid",
           receiverName: member.name,
-          receiverPhone: member.phone,
         })
         .returning();
 
@@ -111,20 +119,20 @@ router.post("/bills", async (req, res): Promise<void> => {
           const [updated] = await db
             .update(splitItemsTable)
             .set({
-              streampayConsumerId: consumer.id,
+              streampayProductId: productId,
               streampayPaymentLinkId: paymentLink.id,
-              paymentLinkUrl: paymentLink.url,
+              streampayPaymentLinkUrl: paymentLink.url,
             })
             .where(eq(splitItemsTable.id, splitItem.id))
             .returning();
 
-          return updated;
+          return toApiSplitItem(updated);
         } catch (err) {
           req.log.error({ err, splitItemId: splitItem.id }, "Failed to create StreamPay payment link for member");
         }
       }
 
-      return splitItem;
+      return toApiSplitItem(splitItem);
     })
   );
 
@@ -155,7 +163,7 @@ router.get("/bills/:billId", async (req, res): Promise<void> => {
     .where(eq(splitItemsTable.billId, bill.id))
     .orderBy(splitItemsTable.createdAt);
 
-  res.json({ ...bill, splitItems: items });
+  res.json({ ...bill, splitItems: items.map(toApiSplitItem) });
 });
 
 router.get("/bills/:billId/summary", async (req, res): Promise<void> => {
@@ -232,16 +240,6 @@ router.post("/bills/:billId/join", async (req, res): Promise<void> => {
     return;
   }
 
-  const existing = await db
-    .select()
-    .from(splitItemsTable)
-    .where(and(eq(splitItemsTable.billId, billId), eq(splitItemsTable.receiverPhone, phone)));
-
-  if (existing.length > 0) {
-    res.status(400).json({ error: "This phone number has already joined this bill." });
-    return;
-  }
-
   const amountPerPerson = parseFloat(bill.amountPerPerson);
 
   const [splitItem] = await db
@@ -251,7 +249,6 @@ router.post("/bills/:billId/join", async (req, res): Promise<void> => {
       amount: bill.amountPerPerson,
       status: "unpaid",
       receiverName: name,
-      receiverPhone: phone,
     })
     .returning();
 
@@ -287,9 +284,9 @@ router.post("/bills/:billId/join", async (req, res): Promise<void> => {
     await db
       .update(splitItemsTable)
       .set({
-        streampayConsumerId: consumer.id,
+        streampayProductId: product.id,
         streampayPaymentLinkId: paymentLink.id,
-        paymentLinkUrl,
+        streampayPaymentLinkUrl: paymentLinkUrl,
       })
       .where(eq(splitItemsTable.id, splitItem.id));
 
