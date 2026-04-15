@@ -3,13 +3,20 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: QuickSplit API — bill splitting with StreamPay integration
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: bills
+    description: Bill management
+  - name: payer
+    description: Payer dashboard
+  - name: webhooks
+    description: Webhook endpoints
+
 paths:
   /healthz:
     get:
@@ -24,6 +31,146 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /bills:
+    get:
+      operationId: listBills
+      tags: [bills]
+      summary: List bills for a payer
+      parameters:
+        - name: payerPhone
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Payer's phone number in E.164 format
+      responses:
+        "200":
+          description: List of bills
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Bill"
+    post:
+      operationId: createBill
+      tags: [bills]
+      summary: Create a new bill with split items
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateBillBody"
+      responses:
+        "201":
+          description: Bill created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BillWithItems"
+        "400":
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /bills/{billId}:
+    get:
+      operationId: getBill
+      tags: [bills]
+      summary: Get bill details (public, for shared link)
+      parameters:
+        - name: billId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Bill details with split items
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BillWithItems"
+        "404":
+          description: Bill not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /bills/{billId}/summary:
+    get:
+      operationId: getBillSummary
+      tags: [bills]
+      summary: Get payment progress summary for a bill
+      parameters:
+        - name: billId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Bill payment progress
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BillSummary"
+        "404":
+          description: Bill not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /payer/stats:
+    get:
+      operationId: getPayerStats
+      tags: [payer]
+      summary: Get aggregated stats for a payer's dashboard
+      parameters:
+        - name: payerPhone
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Payer statistics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PayerStats"
+
+  /webhooks/streampay:
+    post:
+      operationId: streampayWebhook
+      tags: [webhooks]
+      summary: StreamPay payment webhook callback
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StreamPayWebhookPayload"
+      responses:
+        "200":
+          description: Webhook processed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebhookResponse"
+        "400":
+          description: Invalid webhook payload
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
 components:
   schemas:
     HealthStatus:
@@ -34,3 +181,245 @@ components:
       required:
         - status
 
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+      required:
+        - error
+
+    Bill:
+      type: object
+      properties:
+        id:
+          type: string
+        payerName:
+          type: string
+        payerPhone:
+          type: string
+        description:
+          type: string
+        totalAmount:
+          type: string
+        numPeople:
+          type: integer
+        amountPerPerson:
+          type: string
+        status:
+          type: string
+          enum: [active, pending, settled]
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+      required:
+        - id
+        - payerName
+        - payerPhone
+        - description
+        - totalAmount
+        - numPeople
+        - amountPerPerson
+        - status
+        - createdAt
+        - updatedAt
+
+    SplitItem:
+      type: object
+      properties:
+        id:
+          type: string
+        billId:
+          type: string
+        amount:
+          type: string
+        status:
+          type: string
+          enum: [unpaid, paid]
+        receiverName:
+          type: ["string", "null"]
+        receiverPhone:
+          type: ["string", "null"]
+        paymentLinkUrl:
+          type: ["string", "null"]
+        streampayConsumerId:
+          type: ["string", "null"]
+        streampayPaymentLinkId:
+          type: ["string", "null"]
+        streampayRef:
+          type: ["string", "null"]
+        paidAt:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+      required:
+        - id
+        - billId
+        - amount
+        - status
+        - createdAt
+        - updatedAt
+
+    BillWithItems:
+      type: object
+      properties:
+        id:
+          type: string
+        payerName:
+          type: string
+        payerPhone:
+          type: string
+        description:
+          type: string
+        totalAmount:
+          type: string
+        numPeople:
+          type: integer
+        amountPerPerson:
+          type: string
+        status:
+          type: string
+          enum: [active, pending, settled]
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+        splitItems:
+          type: array
+          items:
+            $ref: "#/components/schemas/SplitItem"
+      required:
+        - id
+        - payerName
+        - payerPhone
+        - description
+        - totalAmount
+        - numPeople
+        - amountPerPerson
+        - status
+        - createdAt
+        - updatedAt
+        - splitItems
+
+    CreateBillMember:
+      type: object
+      properties:
+        name:
+          type: string
+        phone:
+          type: string
+      required:
+        - name
+        - phone
+
+    CreateBillBody:
+      type: object
+      properties:
+        payerName:
+          type: string
+        payerPhone:
+          type: string
+        description:
+          type: string
+        totalAmount:
+          type: number
+        members:
+          type: array
+          items:
+            $ref: "#/components/schemas/CreateBillMember"
+      required:
+        - payerName
+        - payerPhone
+        - description
+        - totalAmount
+        - members
+
+    BillSummary:
+      type: object
+      properties:
+        billId:
+          type: string
+        description:
+          type: string
+        totalAmount:
+          type: string
+        amountPerPerson:
+          type: string
+        numPeople:
+          type: integer
+        numPaid:
+          type: integer
+        numUnpaid:
+          type: integer
+        amountCollected:
+          type: string
+        amountRemaining:
+          type: string
+        status:
+          type: string
+          enum: [active, pending, settled]
+        progressPercent:
+          type: integer
+      required:
+        - billId
+        - description
+        - totalAmount
+        - amountPerPerson
+        - numPeople
+        - numPaid
+        - numUnpaid
+        - amountCollected
+        - amountRemaining
+        - status
+        - progressPercent
+
+    PayerStats:
+      type: object
+      properties:
+        totalBills:
+          type: integer
+        activeBills:
+          type: integer
+        pendingBills:
+          type: integer
+        settledBills:
+          type: integer
+        totalCollected:
+          type: string
+        totalOutstanding:
+          type: string
+        recentBills:
+          type: array
+          items:
+            $ref: "#/components/schemas/Bill"
+      required:
+        - totalBills
+        - activeBills
+        - pendingBills
+        - settledBills
+        - totalCollected
+        - totalOutstanding
+        - recentBills
+
+    StreamPayWebhookPayload:
+      type: object
+      properties:
+        event:
+          type: string
+        data:
+          type: object
+          additionalProperties: true
+      required:
+        - event
+        - data
+
+    WebhookResponse:
+      type: object
+      properties:
+        received:
+          type: boolean
+      required:
+        - received

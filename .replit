@@ -18,3 +18,23 @@ expertMode = true
 [postMerge]
 path = "scripts/post-merge.sh"
 timeoutMs = 20000
+
+[[ports]]
+localPort = 8080
+externalPort = 8080
+
+[[ports]]
+localPort = 8081
+externalPort = 80
+
+[[ports]]
+localPort = 23443
+externalPort = 3000
+
+[userenv]
+
+[userenv.shared]
+STREAMPAY_API_KEY = "e67871bf-e0d0-4490-8634-c1b610bcf1b8"
+STREAMPAY_SECRET_KEY = "5f582b3e-3134-424e-bf2b-c206d10fef73"
+STREAMPAY_BASE_URL = "https://stream-app-service.streampay.sa"
+STREAMPAY_SANDBOX = "true"

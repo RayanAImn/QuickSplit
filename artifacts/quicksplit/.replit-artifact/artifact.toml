@@ -1,0 +1,31 @@
+kind = "web"
+previewPath = "/"
+title = "QuickSplit"
+version = "1.0.0"
+id = "artifacts/quicksplit"
+router = "path"
+
+[[integratedSkills]]
+name = "react-vite"
+version = "1.0.0"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 23443
+
+[services.development]
+run = "pnpm --filter @workspace/quicksplit run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/quicksplit", "run", "build" ]
+publicDir = "artifacts/quicksplit/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "23443"
+BASE_PATH = "/"
