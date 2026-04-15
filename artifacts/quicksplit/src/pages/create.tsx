@@ -8,7 +8,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { ArrowLeft, Plus, Trash2, Users, Receipt } from "lucide-react";
+import { QrScannerModal } from "@/components/qr-scanner-modal";
+import { ScannedBillCard } from "@/components/scanned-bill-card";
+import { ZatcaInvoice } from "@/lib/zatca-decoder";
+import { ArrowLeft, Plus, Trash2, Users, Receipt, ScanLine, X } from "lucide-react";
 
 interface Member {
   name: string;
@@ -24,6 +27,8 @@ export default function CreateBill() {
   const [totalAmount, setTotalAmount] = useState("");
   const [members, setMembers] = useState<Member[]>([{ name: "", phone: "" }]);
   const [error, setError] = useState<string | null>(null);
+  const [scannerOpen, setScannerOpen] = useState(false);
+  const [scannedInvoice, setScannedInvoice] = useState<ZatcaInvoice | null>(null);
 
   const createBillMutation = useCreateBill({
     mutation: {
@@ -54,6 +59,20 @@ export default function CreateBill() {
     const updated = [...members];
     updated[index] = { ...updated[index], [field]: value };
     setMembers(updated);
+  };
+
+  const handleInvoiceScanned = (invoice: ZatcaInvoice) => {
+    setScannedInvoice(invoice);
+    if (!description && invoice.sellerName) {
+      setDescription(`Dinner at ${invoice.sellerName}`);
+    }
+    if (!totalAmount && invoice.totalWithVat > 0) {
+      setTotalAmount(invoice.totalWithVat.toFixed(2));
+    }
+  };
+
+  const clearScan = () => {
+    setScannedInvoice(null);
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -107,6 +126,38 @@ export default function CreateBill() {
       </header>
 
       <main className="p-4 space-y-5 max-w-md mx-auto -mt-2">
+        <Button
+          type="button"
+          variant="outline"
+          className="w-full h-12 border-dashed border-2 border-primary/40 text-primary hover:bg-primary/5 gap-2"
+          onClick={() => setScannerOpen(true)}
+        >
+          <ScanLine className="h-5 w-5" />
+          Scan Restaurant Receipt (QR)
+        </Button>
+
+        <AnimatePresence>
+          {scannedInvoice && (
+            <motion.div
+              initial={{ opacity: 0, y: -8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              className="relative"
+            >
+              <ScannedBillCard invoice={scannedInvoice} />
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                onClick={clearScan}
+                className="absolute top-2 right-2 h-7 w-7 text-muted-foreground hover:text-foreground"
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         <form onSubmit={handleSubmit} className="space-y-5">
           <Card>
             <CardHeader className="pb-3">
@@ -114,6 +165,11 @@ export default function CreateBill() {
                 <Receipt className="h-5 w-5 text-primary" />
                 Bill Details
               </CardTitle>
+              {scannedInvoice && (
+                <CardDescription className="text-secondary text-xs">
+                  Pre-filled from your scanned receipt — edit if needed.
+                </CardDescription>
+              )}
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-1.5">
@@ -138,6 +194,11 @@ export default function CreateBill() {
                   onChange={(e) => setTotalAmount(e.target.value)}
                   required
                 />
+                {scannedInvoice && (
+                  <p className="text-xs text-muted-foreground">
+                    Includes VAT of SAR {scannedInvoice.vatAmount.toFixed(2)}
+                  </p>
+                )}
               </div>
 
               {parsedAmount > 0 && numMembers > 0 && (
@@ -238,6 +299,12 @@ export default function CreateBill() {
           </Button>
         </form>
       </main>
+
+      <QrScannerModal
+        open={scannerOpen}
+        onClose={() => setScannerOpen(false)}
+        onInvoiceScanned={handleInvoiceScanned}
+      />
     </div>
   );
 }
