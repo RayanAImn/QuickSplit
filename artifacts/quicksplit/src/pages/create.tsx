@@ -11,11 +11,22 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { QrScannerModal } from "@/components/qr-scanner-modal";
 import { ScannedBillCard } from "@/components/scanned-bill-card";
 import { ZatcaInvoice } from "@/lib/zatca-decoder";
-import { ArrowLeft, Plus, Trash2, Users, Receipt, ScanLine, X } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, Users, Receipt, ScanLine, X, Contact } from "lucide-react";
 
 interface Member {
   name: string;
   phone: string;
+}
+
+declare global {
+  interface Navigator {
+    contacts?: {
+      select: (
+        properties: string[],
+        options?: { multiple?: boolean }
+      ) => Promise<Array<{ name?: string[]; tel?: string[] }>>;
+    };
+  }
 }
 
 export default function CreateBill() {
@@ -71,8 +82,42 @@ export default function CreateBill() {
     }
   };
 
-  const clearScan = () => {
-    setScannedInvoice(null);
+  const handleAddFromContacts = async (index: number) => {
+    if (!navigator.contacts) {
+      alert("Contacts access is not supported on this browser. Use Chrome on Android or Safari on iOS.");
+      return;
+    }
+    try {
+      const results = await navigator.contacts.select(["name", "tel"], { multiple: false });
+      if (!results.length) return;
+      const contact = results[0];
+      const contactName = contact.name?.[0] ?? "";
+      const rawPhone = contact.tel?.[0]?.replace(/\s+/g, "") ?? "";
+      const contactPhone = rawPhone.startsWith("+") ? rawPhone : rawPhone;
+      updateMember(index, "name", contactName);
+      updateMember(index, "phone", contactPhone);
+    } catch {
+      // user dismissed
+    }
+  };
+
+  const handleAddMultipleFromContacts = async () => {
+    if (!navigator.contacts) {
+      alert("Contacts access is not supported on this browser. Use Chrome on Android or Safari on iOS.");
+      return;
+    }
+    try {
+      const results = await navigator.contacts.select(["name", "tel"], { multiple: true });
+      if (!results.length) return;
+      const newMembers: Member[] = results.map((c) => ({
+        name: c.name?.[0] ?? "",
+        phone: c.tel?.[0]?.replace(/\s+/g, "") ?? "",
+      }));
+      const hasEmpty = members.length === 1 && !members[0].name && !members[0].phone;
+      setMembers(hasEmpty ? newMembers : [...members, ...newMembers]);
+    } catch {
+      // user dismissed
+    }
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -108,6 +153,8 @@ export default function CreateBill() {
     setLocation("/");
     return null;
   }
+
+  const contactsSupported = typeof navigator !== "undefined" && "contacts" in navigator;
 
   return (
     <div className="min-h-[100dvh] pb-10">
@@ -149,7 +196,7 @@ export default function CreateBill() {
                 type="button"
                 variant="ghost"
                 size="icon"
-                onClick={clearScan}
+                onClick={() => setScannedInvoice(null)}
                 className="absolute top-2 right-2 h-7 w-7 text-muted-foreground hover:text-foreground"
               >
                 <X className="h-4 w-4" />
@@ -221,13 +268,29 @@ export default function CreateBill() {
 
           <Card>
             <CardHeader className="pb-3">
-              <CardTitle className="flex items-center gap-2">
-                <Users className="h-5 w-5 text-primary" />
-                Members
-              </CardTitle>
-              <CardDescription>
-                Each member will receive a WhatsApp payment link automatically.
-              </CardDescription>
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <CardTitle className="flex items-center gap-2">
+                    <Users className="h-5 w-5 text-primary" />
+                    Members
+                  </CardTitle>
+                  <CardDescription className="mt-1">
+                    Each member gets a WhatsApp payment link automatically.
+                  </CardDescription>
+                </div>
+                {contactsSupported && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={handleAddMultipleFromContacts}
+                    className="shrink-0 gap-1.5 text-xs border-secondary/40 text-secondary hover:bg-secondary/10"
+                  >
+                    <Contact className="h-3.5 w-3.5" />
+                    Contacts
+                  </Button>
+                )}
+              </div>
             </CardHeader>
             <CardContent className="space-y-3">
               <AnimatePresence>
@@ -240,11 +303,26 @@ export default function CreateBill() {
                     className="flex gap-2 items-start"
                   >
                     <div className="flex-1 space-y-2">
-                      <Input
-                        placeholder="Full Name"
-                        value={member.name}
-                        onChange={(e) => updateMember(index, "name", e.target.value)}
-                      />
+                      <div className="flex gap-2">
+                        <Input
+                          placeholder="Full Name"
+                          value={member.name}
+                          onChange={(e) => updateMember(index, "name", e.target.value)}
+                          className="flex-1"
+                        />
+                        {contactsSupported && (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="icon"
+                            onClick={() => handleAddFromContacts(index)}
+                            className="shrink-0 text-secondary border-secondary/40 hover:bg-secondary/10"
+                            title="Pick from contacts"
+                          >
+                            <Contact className="h-4 w-4" />
+                          </Button>
+                        )}
+                      </div>
                       <Input
                         placeholder="+966500000000"
                         value={member.phone}

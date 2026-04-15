@@ -24,6 +24,8 @@ import type {
   ErrorResponse,
   GetPayerStatsParams,
   HealthStatus,
+  JoinBillBody,
+  JoinBillResponse,
   ListBillsParams,
   PayerStats,
   StreamPayWebhookPayload,
@@ -552,6 +554,93 @@ export function useGetPayerStats<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+/**
+ * @summary Self-register as a member of a bill (via join QR/link)
+ */
+export const getJoinBillUrl = (billId: string) => {
+  return `/api/bills/${billId}/join`;
+};
+
+export const joinBill = async (
+  billId: string,
+  joinBillBody: JoinBillBody,
+  options?: RequestInit,
+): Promise<JoinBillResponse> => {
+  return customFetch<JoinBillResponse>(getJoinBillUrl(billId), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(joinBillBody),
+  });
+};
+
+export const getJoinBillMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof joinBill>>,
+    TError,
+    { billId: string; data: BodyType<JoinBillBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof joinBill>>,
+  TError,
+  { billId: string; data: BodyType<JoinBillBody> },
+  TContext
+> => {
+  const mutationKey = ["joinBill"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof joinBill>>,
+    { billId: string; data: BodyType<JoinBillBody> }
+  > = (props) => {
+    const { billId, data } = props ?? {};
+
+    return joinBill(billId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type JoinBillMutationResult = NonNullable<
+  Awaited<ReturnType<typeof joinBill>>
+>;
+export type JoinBillMutationBody = BodyType<JoinBillBody>;
+export type JoinBillMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Self-register as a member of a bill (via join QR/link)
+ */
+export const useJoinBill = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof joinBill>>,
+    TError,
+    { billId: string; data: BodyType<JoinBillBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof joinBill>>,
+  TError,
+  { billId: string; data: BodyType<JoinBillBody> },
+  TContext
+> => {
+  return useMutation(getJoinBillMutationOptions(options));
+};
 
 /**
  * @summary StreamPay payment webhook callback

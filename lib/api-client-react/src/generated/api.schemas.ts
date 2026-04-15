@@ -134,6 +134,20 @@ export interface PayerStats {
   recentBills: Bill[];
 }
 
+export interface JoinBillBody {
+  name: string;
+  phone: string;
+}
+
+export interface JoinBillResponse {
+  splitItemId: string;
+  billId: string;
+  amount: string;
+  /** @nullable */
+  paymentLinkUrl?: string | null;
+  message: string;
+}
+
 export type StreamPayWebhookPayloadData = { [key: string]: unknown };
 
 export interface StreamPayWebhookPayload {

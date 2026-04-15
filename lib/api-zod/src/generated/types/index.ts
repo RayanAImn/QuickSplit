@@ -17,6 +17,8 @@ export * from "./createBillMember";
 export * from "./errorResponse";
 export * from "./getPayerStatsParams";
 export * from "./healthStatus";
+export * from "./joinBillBody";
+export * from "./joinBillResponse";
 export * from "./listBillsParams";
 export * from "./payerStats";
 export * from "./splitItem";

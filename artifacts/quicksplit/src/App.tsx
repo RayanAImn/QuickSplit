@@ -11,6 +11,7 @@ import BillDetail from "@/pages/bill-detail";
 import PayPublic from "@/pages/pay-public";
 import PaySuccess from "@/pages/pay-success";
 import PayFailure from "@/pages/pay-failure";
+import JoinBill from "@/pages/join";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -31,6 +32,7 @@ function Router() {
       <Route path="/pay/:billId" component={PayPublic} />
       <Route path="/pay/:billId/success" component={PaySuccess} />
       <Route path="/pay/:billId/failure" component={PayFailure} />
+      <Route path="/join/:billId" component={JoinBill} />
       <Route component={NotFound} />
     </Switch>
   );

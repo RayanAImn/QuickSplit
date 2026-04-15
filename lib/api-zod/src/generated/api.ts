@@ -143,6 +143,18 @@ export const GetPayerStatsResponse = zod.object({
 });
 
 /**
+ * @summary Self-register as a member of a bill (via join QR/link)
+ */
+export const JoinBillParams = zod.object({
+  billId: zod.coerce.string(),
+});
+
+export const JoinBillBody = zod.object({
+  name: zod.string(),
+  phone: zod.string(),
+});
+
+/**
  * @summary StreamPay payment webhook callback
  */
 export const StreampayWebhookBody = zod.object({

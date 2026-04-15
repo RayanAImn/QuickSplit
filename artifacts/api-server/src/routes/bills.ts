@@ -7,6 +7,8 @@ import {
   GetBillParams,
   GetBillSummaryParams,
   GetPayerStatsQueryParams,
+  JoinBillBody,
+  JoinBillParams,
 } from "@workspace/api-zod";
 import { createOrGetConsumer, createProduct, createPaymentLink } from "../lib/streampay";
 
@@ -199,6 +201,119 @@ router.get("/bills/:billId/summary", async (req, res): Promise<void> => {
     status: bill.status,
     progressPercent,
   });
+});
+
+router.post("/bills/:billId/join", async (req, res): Promise<void> => {
+  try {
+  const rawId = Array.isArray(req.params.billId) ? req.params.billId[0] : req.params.billId;
+  const pathParsed = JoinBillParams.safeParse({ billId: rawId });
+  if (!pathParsed.success) {
+    res.status(400).json({ error: pathParsed.error.message });
+    return;
+  }
+
+  const bodyParsed = JoinBillBody.safeParse(req.body);
+  if (!bodyParsed.success) {
+    res.status(400).json({ error: bodyParsed.error.message });
+    return;
+  }
+
+  const { billId } = pathParsed.data;
+  const { name, phone } = bodyParsed.data;
+  const baseUrl = getAppBaseUrl(req);
+
+  const [bill] = await db.select().from(billsTable).where(eq(billsTable.id, billId));
+  if (!bill) {
+    res.status(404).json({ error: "Bill not found" });
+    return;
+  }
+  if (bill.status === "settled") {
+    res.status(400).json({ error: "This bill has already been settled." });
+    return;
+  }
+
+  const existing = await db
+    .select()
+    .from(splitItemsTable)
+    .where(and(eq(splitItemsTable.billId, billId), eq(splitItemsTable.receiverPhone, phone)));
+
+  if (existing.length > 0) {
+    res.status(400).json({ error: "This phone number has already joined this bill." });
+    return;
+  }
+
+  const amountPerPerson = parseFloat(bill.amountPerPerson);
+
+  const [splitItem] = await db
+    .insert(splitItemsTable)
+    .values({
+      billId,
+      amount: bill.amountPerPerson,
+      status: "unpaid",
+      receiverName: name,
+      receiverPhone: phone,
+    })
+    .returning();
+
+  let paymentLinkUrl: string | null = null;
+
+  try {
+    const product = await createProduct({
+      name: `${bill.description} — حصة الدفع`,
+      price: amountPerPerson,
+    });
+
+    const consumer = await createOrGetConsumer({
+      name,
+      phoneNumber: phone,
+      externalId: `quicksplit-${splitItem.id}`,
+    });
+
+    const paymentLink = await createPaymentLink({
+      name: bill.description,
+      description: `حصتك: ${amountPerPerson.toFixed(2)} ريال`,
+      productId: product.id,
+      consumerId: consumer.id,
+      successUrl: `${baseUrl}/pay/${billId}/success`,
+      failureUrl: `${baseUrl}/pay/${billId}/failure`,
+      metadata: {
+        split_item_id: splitItem.id,
+        bill_id: billId,
+      },
+    });
+
+    paymentLinkUrl = paymentLink.url;
+
+    await db
+      .update(splitItemsTable)
+      .set({
+        streampayConsumerId: consumer.id,
+        streampayPaymentLinkId: paymentLink.id,
+        paymentLinkUrl,
+      })
+      .where(eq(splitItemsTable.id, splitItem.id));
+
+    await db
+      .update(billsTable)
+      .set({ numPeople: bill.numPeople + 1, updatedAt: new Date().toISOString() })
+      .where(eq(billsTable.id, billId));
+  } catch (err) {
+    req.log.error({ err }, "Failed to create StreamPay link for joining member");
+  }
+
+  res.status(201).json({
+    splitItemId: splitItem.id,
+    billId,
+    amount: bill.amountPerPerson,
+    paymentLinkUrl,
+    message: paymentLinkUrl
+      ? "Payment link sent via WhatsApp."
+      : "Joined successfully. Payment link will follow.",
+  });
+  } catch (err) {
+    req.log.error({ err }, "Unhandled error in join route");
+    if (!res.headersSent) res.status(500).json({ error: "Internal server error" });
+  }
 });
 
 router.get("/payer/stats", async (req, res): Promise<void> => {

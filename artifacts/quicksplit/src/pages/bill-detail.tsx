@@ -7,7 +7,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ArrowLeft, Copy, CheckCircle2, Clock, Link2, Share2 } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ArrowLeft, Copy, CheckCircle2, Clock, Link2, Share2, UserPlus } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 function statusColor(status: string) {
@@ -31,17 +32,18 @@ export default function BillDetail() {
   });
 
   const payLink = `${window.location.origin}/pay/${billId}`;
+  const joinLink = `${window.location.origin}/join/${billId}`;
 
-  const copyLink = async () => {
-    await navigator.clipboard.writeText(payLink);
-    toast({ title: "Link copied", description: "Payment link copied to clipboard." });
+  const copyLink = async (link: string, label: string) => {
+    await navigator.clipboard.writeText(link);
+    toast({ title: `${label} copied`, description: "Link copied to clipboard." });
   };
 
-  const shareLink = async () => {
+  const shareLink = async (link: string, title: string) => {
     if (navigator.share) {
-      await navigator.share({ title: bill?.description ?? "Bill", url: payLink });
+      await navigator.share({ title, url: link });
     } else {
-      copyLink();
+      copyLink(link, title);
     }
   };
 
@@ -112,26 +114,65 @@ export default function BillDetail() {
 
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-base flex items-center gap-2">
-              <Link2 className="h-4 w-4 text-primary" />
-              Share Payment Link
-            </CardTitle>
+            <CardTitle className="text-base">Share Links</CardTitle>
           </CardHeader>
-          <CardContent className="flex flex-col items-center gap-4">
-            <div className="bg-white p-3 rounded-xl border">
-              <QRCodeSVG value={payLink} size={160} fgColor="#1F6F5F" />
-            </div>
-            <div className="flex gap-3 w-full">
-              <Button variant="outline" className="flex-1" onClick={copyLink}>
-                <Copy className="h-4 w-4 mr-2" />
-                Copy Link
-              </Button>
-              <Button variant="secondary" className="flex-1" onClick={shareLink}>
-                <Share2 className="h-4 w-4 mr-2" />
-                Share
-              </Button>
-            </div>
-            <p className="text-xs text-muted-foreground text-center break-all">{payLink}</p>
+          <CardContent>
+            <Tabs defaultValue="pay">
+              <TabsList className="w-full mb-4">
+                <TabsTrigger value="pay" className="flex-1 gap-1.5">
+                  <Link2 className="h-3.5 w-3.5" />
+                  Pay Page
+                </TabsTrigger>
+                <TabsTrigger value="join" className="flex-1 gap-1.5">
+                  <UserPlus className="h-3.5 w-3.5" />
+                  Join Link
+                </TabsTrigger>
+              </TabsList>
+
+              <TabsContent value="pay" className="space-y-4 mt-0">
+                <p className="text-xs text-muted-foreground">
+                  Share with members who already have payment links assigned.
+                </p>
+                <div className="flex justify-center">
+                  <div className="bg-white p-3 rounded-xl border">
+                    <QRCodeSVG value={payLink} size={150} fgColor="#1F6F5F" />
+                  </div>
+                </div>
+                <div className="flex gap-3">
+                  <Button variant="outline" className="flex-1" onClick={() => copyLink(payLink, "Pay link")}>
+                    <Copy className="h-4 w-4 mr-2" />
+                    Copy
+                  </Button>
+                  <Button variant="secondary" className="flex-1" onClick={() => shareLink(payLink, bill.description)}>
+                    <Share2 className="h-4 w-4 mr-2" />
+                    Share
+                  </Button>
+                </div>
+                <p className="text-xs text-muted-foreground text-center break-all">{payLink}</p>
+              </TabsContent>
+
+              <TabsContent value="join" className="space-y-4 mt-0">
+                <p className="text-xs text-muted-foreground">
+                  Members scan this QR, enter their name & number, and receive their payment link via WhatsApp automatically.
+                </p>
+                <div className="flex justify-center">
+                  <div className="bg-white p-3 rounded-xl border">
+                    <QRCodeSVG value={joinLink} size={150} fgColor="#2FA084" />
+                  </div>
+                </div>
+                <div className="flex gap-3">
+                  <Button variant="outline" className="flex-1" onClick={() => copyLink(joinLink, "Join link")}>
+                    <Copy className="h-4 w-4 mr-2" />
+                    Copy
+                  </Button>
+                  <Button variant="secondary" className="flex-1" onClick={() => shareLink(joinLink, `Join: ${bill.description}`)}>
+                    <Share2 className="h-4 w-4 mr-2" />
+                    Share
+                  </Button>
+                </div>
+                <p className="text-xs text-muted-foreground text-center break-all">{joinLink}</p>
+              </TabsContent>
+            </Tabs>
           </CardContent>
         </Card>
 
