@@ -21,6 +21,7 @@ export default function Dashboard() {
     { payerPhone: phone },
     { query: { enabled: !!phone, queryKey: getGetPayerStatsQueryKey({ payerPhone: phone }) } }
   );
+  const recentBills = stats?.recentBills ?? [];
 
   const handleLogout = () => {
     clearPayer();
@@ -83,7 +84,7 @@ export default function Dashboard() {
               <Skeleton key={i} className="h-20 w-full rounded-xl" />
             ))}
           </div>
-        ) : stats?.recentBills?.length === 0 ? (
+        ) : recentBills.length === 0 ? (
           <Card className="border-dashed bg-transparent shadow-none">
             <CardContent className="flex flex-col items-center justify-center p-8 text-center">
               <div className="bg-card p-3 rounded-full mb-3">
@@ -98,7 +99,7 @@ export default function Dashboard() {
           </Card>
         ) : (
           <div className="space-y-3">
-            {stats?.recentBills.map((bill, index) => (
+            {recentBills.map((bill, index) => (
               <motion.div
                 key={bill.id}
                 initial={{ opacity: 0, y: 10 }}

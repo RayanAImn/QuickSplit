@@ -1,4 +1,5 @@
 const { spawn } = require("node:child_process");
+const { withLoadedEnv } = require("./load-env.cjs");
 
 const packageManagerExecPath = process.env.npm_execpath;
 if (!packageManagerExecPath) {
@@ -6,13 +7,14 @@ if (!packageManagerExecPath) {
 }
 
 const command = process.execPath;
+const env = withLoadedEnv({
+  PORT: process.env.PORT ?? "5173",
+  BASE_PATH: process.env.BASE_PATH ?? "/",
+});
+
 const child = spawn(command, [packageManagerExecPath, "--filter", "@workspace/quicksplit", "run", "dev"], {
   stdio: "inherit",
-  env: {
-    ...process.env,
-    PORT: process.env.PORT ?? "5173",
-    BASE_PATH: process.env.BASE_PATH ?? "/",
-  },
+  env,
 });
 
 child.on("exit", (code, signal) => {

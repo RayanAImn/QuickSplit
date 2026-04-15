@@ -1,4 +1,5 @@
 const { spawn } = require("node:child_process");
+const { withLoadedEnv } = require("./load-env.cjs");
 
 const packageManagerExecPath = process.env.npm_execpath;
 if (!packageManagerExecPath) {
@@ -24,18 +25,25 @@ function spawnDevProcess(args, env) {
 
 const frontend = spawnDevProcess(
   ["--filter", "@workspace/quicksplit", "run", "dev"],
-  {
+  withLoadedEnv({
     PORT: process.env.FRONTEND_PORT ?? "5173",
     BASE_PATH: process.env.BASE_PATH ?? "/",
-  },
+  }),
 );
+
+const apiEnv = withLoadedEnv({
+  NODE_ENV: process.env.NODE_ENV ?? "development",
+  PORT: process.env.API_PORT ?? "3000",
+});
+
+if (!apiEnv.DATABASE_URL) {
+  console.error("DATABASE_URL is missing. Set DATABASE_URL or SUPABASE_DB_URL in .env.");
+  process.exit(1);
+}
 
 const api = spawnDevProcess(
   ["--filter", "@workspace/api-server", "run", "dev"],
-  {
-    NODE_ENV: process.env.NODE_ENV ?? "development",
-    PORT: process.env.API_PORT ?? "3000",
-  },
+  apiEnv,
 );
 
 function shutdown(exitCode = 0) {
